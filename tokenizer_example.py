@@ -109,8 +109,7 @@ tag_scores,loss = tokenizer.forward_loss(data_points)
 
 # loss should be a single value tensor 
 print(loss)
-#%%
+#%% the evaluate function does not work yet
 error_sentence,results  = tokenizer.evaluate(data_points)
 
 #%%
-data_points.string

@@ -184,12 +184,8 @@ class FlairTokenizer(flair.nn.Model):
                         error_sentence.append((sent,tag,tag_predict))
                 R_score.append(R); P_score.append(P);F1_score.append(F1)
 
+            #['Recall','Precision','F1 score']
             results = (np.mean(R_score), np.mean(P_score),np.mean(F1_score))
-
-
-            #     ['Recall','Precision','F1 score']
-
-            # pd.DataFrame.from_dict(error_sentence, orient='index').T.to_csv(out_path+'/failed_sentences.csv')
             
             return error_sentence,results     
             
@@ -226,27 +222,3 @@ class FlairTokenizer(flair.nn.Model):
     def _fetch_model(model_name) -> str:
         return model_name
 
-
-
-
-#%%
-    
-# def load_checkpoint(checkpoint, model, optimizer):
-#     print("=> Loading checkpoint")
-#     model.load_state_dict(checkpoint['state_dict'])
-#     optimizer.load_state_dict(checkpoint['optimizer'])
-
-# def load_checkpoint(checkpoint, model, optimizer):
-#     print("=> Loading checkpoint")
-#     model.load_state_dict(checkpoint['state_dict'])
-#     optimizer.load_state_dict(checkpoint['optimizer'])
-
-# # if load_model: load_checkpoint(torch.load(filename), model, optimizer)
-
-# model = LSTMTagger(character_size,embedding_dim,hidden_dim, num_layers,tagset_size,batch_size,use_CSE=use_CSE)
-# if(torch.cuda.is_available()):
-# 	print(torch.cuda.current_device())
-# model = model.to(device); model.train()
-# optimizer = optim.SGD(model.parameters(), learning_rate)
-# loss_function = nn.NLLLoss()
-# filename = "./trained_models/BiLSTM4096_CN.tar"
