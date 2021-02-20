@@ -26,37 +26,59 @@ torch.manual_seed(1)
 class FlairTokenizer(flair.nn.Model):
 
     def __init__(self,
-                 letter_to_ix,
-                 embedding_dim,
-                 hidden_dim,
-                 num_layers,
-                 tagset_size,
-                 batch_size,
+                 letter_to_ix, # character dictionary 
+                 embedding_dim=4096,
+                 hidden_dim=256,
+                 num_layers=1,
+                 batch_size=1,
                  use_CSE=False,
                  tag_to_ix={'B': 0, 'I': 1, 'E': 2, 'S': 3, 'X': 4},
-                 learning_rate=0.1
+                 learning_rate=0.1,
+                 use_CRF = False
                  ):
 
         super(FlairTokenizer, self).__init__()
         self.letter_to_ix = letter_to_ix
+        self.embedding_dim = embedding_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.batch_size = batch_size
         self.use_CSE = use_CSE
         self.tag_to_ix = tag_to_ix
         self.learning_rate = learning_rate
-
-        self.character_embeddings = nn.Embedding(len(letter_to_ix), embedding_dim)
-        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers, batch_first=False, bidirectional=True)
-        if self.use_CSE == True:
+        self.use_CRF = use_CRF
+        
+        if self.use_CSE == False:
+            self.character_embeddings = nn.Embedding(len(letter_to_ix), embedding_dim)
+            self.embeddings = self.character_embeddings
+        elif self.use_CSE == True:
             self.flair_embedding = FlairEmbeddings
             self.lm_f: LanguageModel = self.flair_embedding('multi-forward').lm
             self.lm_b: LanguageModel = self.flair_embedding('multi-backward').lm
-        self.hidden2tag = nn.Linear(hidden_dim * 2, tagset_size)
+            self.embeddings = self.flair_embedding
 
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers, batch_first=False, bidirectional=True)
+        self.hidden2tag = nn.Linear(hidden_dim * 2, len(tag_to_ix))
         self.loss_function = nn.NLLLoss()
-
+        if self.use_CRF == True:
+            # Matrix of transition parameters.  Entry i,j is the score of
+             # transitioning *to* i *from* j.
+            self.transitions = nn.Parameter(
+                torch.randn(len(self.tag_to_ix), len(self.tag_to_ix)))
+            # These two statements enforce the constraint that we never transfer
+            # to the start tag and we never transfer from the stop tag
+            START_TAG = "<START>"
+            STOP_TAG = "<STOP>"
+            self.transitions.data[tag_to_ix[START_TAG], :] = -10000
+            self.transitions.data[:, tag_to_ix[STOP_TAG]] = -10000
+        
+        self.hidden = self.init_hidden()
+        
         self.to(flair.device)
+
+    def init_hidden(self):
+        return (torch.randn(2, 1, self.hidden_dim ),
+                torch.randn(2, 1, self.hidden_dim ))
 
     def prepare_cse(self, sentence, batch_size=1):
         if batch_size == 1:
@@ -66,17 +88,21 @@ class FlairTokenizer(flair.nn.Model):
             embeds_f = self.lm_f.get_representation(list(sentence), '\n', '\n')[1:-1, :, :]
             embeds_b = self.lm_b.get_representation(list(sentence), '\n', '\n')[1:-1, :, :]
         return torch.cat((embeds_f, embeds_b), dim=2)
-
-    def prepare_batch(self, data_points_str, to_ix):
+    @staticmethod
+    def prepare_batch(data_points_str, to_ix):
         tensor_list = []
         for seq in data_points_str:
             idxs = [to_ix[w] for w in seq]
             tensor = torch.tensor(idxs, dtype=torch.long, device=flair.device)
             tensor_list.append(tensor)
-        return pad_sequence(tensor_list, batch_first=False).squeeze()  # adjust dim for batch_size is one
+        batch_tensor = pad_sequence(tensor_list, batch_first=False).squeeze()
+        if len(batch_tensor.shape)==1:
+            return batch_tensor.view(-1,1)
+        else: return batch_tensor
 
-    def find_token(self, sentence_str):
-        token = [];
+    @staticmethod
+    def find_token(sentence_str):
+        token = []
         word = ''
         for i, tag in enumerate(sentence_str[1]):
             if tag == 'S':
@@ -103,44 +129,60 @@ class FlairTokenizer(flair.nn.Model):
 
     @abstractmethod
     def forward_loss(
-            self, data_points: Union[List[DataPoint], DataPoint]
+            self, data_points: Union[List[DataPoint], DataPoint],
+            foreval = False,
     ) -> torch.tensor:
         """Performs a forward pass and returns a loss tensor for backpropagation. Implement this to enable training."""
-
+        # if (self.batch_size > 1) : 
+        try:
+            sent_string,tags = [],[]
+            for sentence in data_points: 
+                sent_string.append((sentence.string))
+                tags.append(sentence.get_labels('tokenization')[0]._value)
+            batch_size=len(data_points)
+        except: 
+            sent_string = data_points.string
+            tags = data_points.get_labels('tokenization')[0]._value
+            batch_size = 1
+        
+        targets = self.prepare_batch(tags, self.tag_to_ix).squeeze().to(device=device)
         if self.use_CSE == True:
-            embeds = self.prepare_cse(data_points.string, batch_size=self.batch_size).to(device)
+            embeds = self.prepare_cse(sent_string, batch_size=batch_size).to(device)
         elif self.use_CSE == False:
-            embeds = self.prepare_batch(data_points.string, self.letter_to_ix)
+            embeds = self.prepare_batch(sent_string, self.letter_to_ix)
             embeds = self.character_embeddings(embeds)
 
-        x = embeds.view(embeds.shape[0], self.batch_size, -1)
-        h0 = torch.zeros(self.num_layers * 2, self.batch_size, self.hidden_dim).to(device)
-        c0 = torch.zeros(self.num_layers * 2, self.batch_size, self.hidden_dim).to(device)
-        out, _ = self.lstm(x, (h0, c0))
-        tag_space = self.hidden2tag(out.view(embeds.shape[0], self.batch_size, -1))
+        
+        h0 = torch.zeros(self.num_layers * 2, embeds.shape[1], self.hidden_dim).to(device)
+        c0 = torch.zeros(self.num_layers * 2, embeds.shape[1], self.hidden_dim).to(device)
+        out, _ = self.lstm(embeds, (h0, c0))
+        tag_space = self.hidden2tag(out.view(embeds.shape[0], embeds.shape[1], -1))
         tag_scores = F.log_softmax(tag_space, dim=2).squeeze()  # dim = (len(data_points),batch,len(tag))
 
-        tags = data_points.get_labels('tokenization')[0]._value
-        targets = self.prepare_batch(tags, self.tag_to_ix).to(device=device)
-        # if embeds.shape[1] != self.batch_size: continue
-        if self.batch_size > 1:
+        if (batch_size > 1) : # if the input is more than one datapoint
             length_list = []
-            for sentence in data_points.string: length_list.append(len(sentence))
+            for sentence in data_points: 
+                length_list.append(len(sentence.string))
             tag_scores = pack_padded_sequence(tag_scores, length_list, enforce_sorted=False).data
             targets = pack_padded_sequence(targets, length_list, enforce_sorted=False).data
-
+        
         loss = self.loss_function(tag_scores, targets)
-        return tag_scores, loss
+        if foreval: return tag_scores
+        else: return loss
 
         # TODO: what is currently your forward() goes here, followed by the loss computation
         # Since the DataPoint brings its own label, you can compute the loss here
-
+    
+    
     @abstractmethod
     def evaluate(
             self,
             sentences: Union[List[DataPoint], Dataset],
             out_path: Path = None,
             embedding_storage_mode: str = "none",
+            mini_batch_size: int = 32,
+            num_workers: int = 8,
+            wsd_evaluation: bool = False
     ) -> (Result, float):
         """Evaluates the model. Returns a Result object containing evaluation
         results and a loss value. Implement this to enable evaluation.
@@ -150,26 +192,18 @@ class FlairTokenizer(flair.nn.Model):
         freshly recomputed, 'cpu' means all embeddings are stored on CPU, or 'gpu' means all embeddings are stored on GPU
         :return: Returns a Tuple consisting of a Result object and a loss float value
         """
+        # print("evaluate batch_size : ",mini_batch_size)
         with torch.no_grad():
             import numpy as np;
             from tqdm import tqdm;
-            import pandas as pd
-            # load_checkpoint(torch.load(model_name,map_location=torch.device(embedding_storage_mode)), model, optimizer)
-            # model,optimizer = self._init_model_with_state_dict()
-            # state = self._get_state_dict()
-            # self.load_state_dict(state['state_dict'])
-            error_sentence = [];
+            error_sentence = []
             R_score, P_score, F1_score = [], [], []
 
             for data_points in tqdm(sentences, position=0):
-                # inputs = self.prepare_batch(sent,self.letter_to_ix)
-                # print(model)
-                # tag_scores = model(inputs)
                 sent = data_points.string
                 tag = data_points.get_labels('tokenization')[0]._value
-                self.batch_size = 1
-                tag_scores, loss = self.forward_loss(data_points)
-                print(tag_scores)
+                tag_scores = self.forward_loss(data_points,foreval=True) 
+                # print(tag_scores)
                 tag_predict = self.prediction_str(tag_scores)
 
                 reference = self.find_token((sent, tag))
@@ -189,9 +223,11 @@ class FlairTokenizer(flair.nn.Model):
                     F1 = 0
                     if (sent, tag, tag_predict) not in error_sentence:
                         error_sentence.append((sent, tag, tag_predict))
-                R_score.append(R);
-                P_score.append(P);
+                R_score.append(R)
+                P_score.append(P)
                 F1_score.append(F1)
+
+
 
             # ['Recall','Precision','F1 score']
             results = (np.mean(R_score), np.mean(P_score), np.mean(F1_score))
@@ -201,29 +237,38 @@ class FlairTokenizer(flair.nn.Model):
             # TODO: Your evaluation routine goes here. For the DataPoints passed into this method, compute the accuracy
         # and store it in a Result object, which you return.
 
-    @abstractmethod
-    def _get_state_dict(self, file=None):
-        """Returns the state dictionary for this model. Implementing this enables the save() and save_checkpoint()
-        functionality."""
-        optimizer = optim.SGD(self.parameters(), self.learning_rate)
-        checkpoint = {'state_dict': self.state_dict(), 'optimizer': optimizer.state_dict()}
-        if file != None:
-            print("=> Saving checkpoint to: %s" % file)
-            torch.save(checkpoint, file)
-        return checkpoint
 
-    # @staticmethod
-    @abstractmethod  # note: not so sure about this function
-    def _init_model_with_state_dict(self, file=None):
-        """Initialize the model from a state dictionary. Implementing this enables the load() and load_checkpoint()
-        functionality."""
-        optimizer = optim.SGD(self.parameters(), self.learning_rate)
-        print("=> Loading checkpoint from : %s " % file)
-        state = torch.load(file)
-        # state = self._get_state_dict()
-        self.load_state_dict(state['state_dict'])
-        optimizer.load_state_dict(state['optimizer'])
-        return self, optimizer
+    def _get_state_dict(self):
+        model_state = {
+            "state_dict": self.state_dict(),
+            'letter_to_ix': self.letter_to_ix,
+            'embedding_dim' : self.embedding_dim,
+            'hidden_dim': self.hidden_dim,
+            'num_layers':self.num_layers,
+            'batch_size':self.batch_size,
+            'use_CSE':self.use_CSE,
+            'tag_to_ix':self.tag_to_ix,
+            'learning_rate':self.learning_rate,
+            'use_CRF':self.use_CRF
+        }
+        return model_state
+
+    @staticmethod
+    def _init_model_with_state_dict(state):
+        model = FlairTokenizer(
+            letter_to_ix = state['letter_to_ix'],
+            embedding_dim = state['embedding_dim'],
+            hidden_dim = state['hidden_dim'],
+            num_layers = state['num_layers'],
+            batch_size = state['batch_size'],
+            use_CSE = state['use_CSE'],
+            tag_to_ix = state['tag_to_ix'],
+            learning_rate = state['learning_rate'],
+            use_CRF = state['use_CRF']
+        )
+        model.load_state_dict(state["state_dict"])
+        return model
+
 
     @staticmethod
     @abstractmethod

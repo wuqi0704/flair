@@ -1,6 +1,8 @@
+#%%
 from flair.data import Corpus, LabeledString
 
 from flair.datasets import SentenceDataset
+from flair.embeddings import token
 from flair.models.tokenizer_model import FlairTokenizer
 
 # only one language for now
@@ -23,9 +25,11 @@ for language in LanguageList:
     data_test.extend([LabeledString(pair[0]).set_label('tokenization', pair[1]) for pair in test])
     data_dev.extend([LabeledString(pair[0]).set_label('tokenization', pair[1]) for pair in dev])
 
+
+#%%
 # 2. make a Corpus object
 corpus: Corpus = Corpus(SentenceDataset(data_train), SentenceDataset(data_test), SentenceDataset(data_dev))
-
+corpus = corpus.downsample(0.01)
 # 3. make the letter dictionary from the corpus
 letter_to_ix = {}
 letter_to_ix[''] = 0  # need this for padding
@@ -42,7 +46,6 @@ tokenizer: FlairTokenizer = FlairTokenizer(
     embedding_dim=4096,
     hidden_dim=256,
     num_layers=1,
-    tagset_size=5,
     batch_size=1,
     use_CSE=False
 )
@@ -51,11 +54,21 @@ tokenizer: FlairTokenizer = FlairTokenizer(
 from flair.trainers import ModelTrainer
 
 trainer: ModelTrainer = ModelTrainer(tokenizer, corpus)
-
+#%%
 # 6. train
 trainer.train(
     "resources/taggers/example-tokenizer",
     learning_rate=0.1,
-    mini_batch_size=32,
-    max_epochs=20,
+    mini_batch_size=1,
+    max_epochs=5,
 )
+
+# %%
+from flair.datasets import DataLoader
+shuffle = True
+batch_size = 10
+dataloader = DataLoader(dataset=corpus.dev, batch_size=batch_size, shuffle=shuffle)
+item = iter(dataloader).next()
+item
+#%%
+item[0].string

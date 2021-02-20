@@ -1,7 +1,7 @@
-import flair
 # %%
-from torch.utils.data import DataLoader
-from typing import Union, List
+# import flair
+from flair.datasets import DataLoader
+# from typing import Union, List
 
 # LanguageList = [
 #     'HEBREW','ARABIC','PORTUGUESE','ITALIAN','FRENCH','SPANISH','GERMAN','ENGLISH',
@@ -34,11 +34,8 @@ for sent, tags in data_train + data_test + data_dev:
 print('functions.py : Nr. of distinguish character: ', len(letter_to_ix.keys()))
 
 tag_to_ix = {'B': 0, 'I': 1, 'E': 2, 'S': 3, 'X': 4}
+ix_to_tag = {y: x for x, y in tag_to_ix.items()}
 
-shuffle = True
-batch_size = 10
-train_loader = DataLoader(dataset=data_train, batch_size=batch_size, shuffle=shuffle)
-dev_loader = DataLoader(dataset=data_dev, batch_size=batch_size, shuffle=shuffle)
 
 # %%
 from flair.data import LabeledString
@@ -60,9 +57,8 @@ print(sentence.string)
 # print the label
 print(sentence.get_labels('tokenization'))
 
-tag_to_ix = {'B': 0, 'I': 1, 'E': 2, 'S': 3, 'X': 4}
-ix_to_tag = {y: x for x, y in tag_to_ix.items()}
 
+#%%
 # from flair.models.tokenizer_model import *
 from flair.models.tokenizer_model import FlairTokenizer
 
@@ -70,24 +66,35 @@ from flair.models.tokenizer_model import FlairTokenizer
 embedding_dim = 4096
 hidden_dim = 256
 num_layers = 1
-tagset_size = 5
 batch_size = 1
 use_CSE = False
 # init the tokenizer like you would your LSTMTagger
-tokenizer: FlairTokenizer = FlairTokenizer(letter_to_ix, embedding_dim, hidden_dim, num_layers, tagset_size, batch_size,
+tokenizer: FlairTokenizer = FlairTokenizer(letter_to_ix, embedding_dim, hidden_dim, num_layers, batch_size,
                                            use_CSE)
 
 # FIXME: do a forward pass and compute the loss for two data points
-tag_scores, loss = tokenizer.forward_loss([sentence, sentence_2])
+loss = tokenizer.forward_loss([sentence, sentence_2])
 
+# tag_scores, loss = tokenizer.forward_loss(sentence_2)
 # loss should be a single value tensor 
 print(loss)
+
+#%%
+sentences = [sentence, sentence_2]
+tag_scores = tokenizer.forward_loss(sentences,foreval=True)
+tag_scores.shape
+
+tokenizer.evaluate(sentences)
+
+#%%
+tag_scores.shape
+
 # %% save the model
-filename = 'test.tar'
-checkpoint = tokenizer._get_state_dict(filename)
+# filename = 'test.tar'
+# checkpoint = tokenizer._get_state_dict(filename)
 
 # %% load the model
-tokenizer: FlairTokenizer = FlairTokenizer(letter_to_ix, embedding_dim, hidden_dim, num_layers, tagset_size, batch_size,
+tokenizer: FlairTokenizer = FlairTokenizer(letter_to_ix, embedding_dim, hidden_dim, num_layers, batch_size,
                                            use_CSE)
 filename = 'test.tar'
 tokenizer, optimizer = tokenizer._init_model_with_state_dict(filename)
@@ -112,11 +119,10 @@ from flair.models.tokenizer_model import FlairTokenizer
 embedding_dim = 4096
 hidden_dim = 256
 num_layers = 1
-tagset_size = 5
 batch_size = 10
 use_CSE = False
 # init the tokenizer like you would your LSTMTagger
-tokenizer: FlairTokenizer = FlairTokenizer(letter_to_ix, embedding_dim, hidden_dim, num_layers, tagset_size, batch_size,
+tokenizer: FlairTokenizer = FlairTokenizer(letter_to_ix, embedding_dim, hidden_dim, num_layers, batch_size,
                                            use_CSE)
 
 # do a forward pass and compute the loss for the data point
@@ -128,3 +134,25 @@ print(loss)
 error_sentence, results = tokenizer.evaluate(data_points)
 
 # %%
+state = tokenizer._get_state_dict()
+tokenizer._init_model_with_state_dict(state)
+#%%
+state.keys()
+
+#%%
+def prepare_batch(data_points_str, to_ix):
+    tensor_list = []
+    for seq in data_points_str:
+        idxs = [to_ix[w] for w in seq]
+        tensor = torch.tensor(idxs, dtype=torch.long, device=flair.device)
+        tensor_list.append(tensor)
+    batch_tensor = pad_sequence(tensor_list, batch_first=False).squeeze()
+    if len(batch_tensor.shape)==1:
+        return batch_tensor.view(-1,1)
+    else: return batch_tensor
+    
+#%%
+from flair.models.tokenizer_model import *
+x = prepare_batch(sentence.string,letter_to_ix)
+
+x
