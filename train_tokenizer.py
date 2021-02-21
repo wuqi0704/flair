@@ -46,7 +46,6 @@ tokenizer: FlairTokenizer = FlairTokenizer(
     embedding_dim=4096,
     hidden_dim=256,
     num_layers=1,
-    batch_size=1,
     use_CSE=False
 )
 
@@ -59,16 +58,9 @@ trainer: ModelTrainer = ModelTrainer(tokenizer, corpus)
 trainer.train(
     "resources/taggers/example-tokenizer",
     learning_rate=0.1,
-    mini_batch_size=1,
+    mini_batch_size=32,
     max_epochs=5,
 )
 
-# %%
-from flair.datasets import DataLoader
-shuffle = True
-batch_size = 10
-dataloader = DataLoader(dataset=corpus.dev, batch_size=batch_size, shuffle=shuffle)
-item = iter(dataloader).next()
-item
 #%%
-item[0].string
+corpus.dev
