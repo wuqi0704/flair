@@ -61,6 +61,3 @@ trainer.train(
     mini_batch_size=1,
     max_epochs=5,
 )
-
-#%%
-corpus.dev

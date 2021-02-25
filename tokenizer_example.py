@@ -39,7 +39,6 @@ print('functions.py : Nr. of distinguish character: ', len(letter_to_ix.keys()))
 
 from flair.data import LabeledString
 
-# import torch
 # LabeledString is a DataPoint - init and set the label
 sentence = LabeledString('Any major dischord and we all suffer.')
 sentence.set_label('tokenization', 'BIEXBIIIEXBIIIIIIEXBIEXBEXBIEXBIIIIES')
@@ -55,13 +54,9 @@ print(sentence.string)
 
 # print the label
 print(sentence.get_labels('tokenization'))
-
-
-#%% use_CRF = True
-# from flair.models.tokenizer_model import *
+#%%
 from flair.models.tokenizer_model import FlairTokenizer
 
-# character_size = 10
 embedding_dim = 4096
 hidden_dim = 256
 num_layers = 1
@@ -73,30 +68,41 @@ tokenizer: FlairTokenizer = FlairTokenizer(letter_to_ix, embedding_dim, hidden_d
 
 # FIXME: do a forward pass and compute the loss for two data points
 print(tokenizer.forward_loss([sentence, sentence_2]))
-print(tokenizer.forward_loss(sentence))
+print(tokenizer.forward_loss(sentence))   
 
-#%% use_CRF = False
-#%%
 sentences = [sentence, sentence_2]
-# tokenizer.forward_loss(sentences,foreval=True)
-# tokenizer.forward_loss(sentence,foreval=True)
-tokenizer.evaluate(sentences)
-# tokenizer.evaluate(sentence) # FIXME: system stop running if I try tokenizer.evaluate([sentence])
-# TypeError: object of type 'LabeledString' has no len()
-
+print(tokenizer.forward_loss(sentences,foreval=True))
+print(tokenizer.forward_loss(sentence,foreval=True))
+print(tokenizer.evaluate(sentences))
+print(tokenizer.evaluate(sentence))
 
 #%%
-from flair.datasets import SentenceDataset
-sentence = SentenceDataset(sentence)
-# tokenizer.evaluate(sentence)
-
-# %% load the model
+use_CRF = True
+# init the tokenizer like you would your LSTMTagger
 tokenizer: FlairTokenizer = FlairTokenizer(letter_to_ix, embedding_dim, hidden_dim, num_layers,
-                                           use_CSE)
-filename = 'test.tar'
-tokenizer, optimizer = tokenizer._init_model_with_state_dict(filename)
+                                           use_CSE,use_CRF=use_CRF)
 
+# FIXME: do a forward pass and compute the loss for two data points
+print(tokenizer.forward_loss([sentence, sentence_2]))
+print(tokenizer.forward_loss(sentence))   
 
-# %%
-state = tokenizer._get_state_dict()
-tokenizer._init_model_with_state_dict(state)
+sentences = [sentence, sentence_2]
+print(tokenizer.forward_loss(sentences,foreval=True))
+print(tokenizer.forward_loss(sentence,foreval=True))
+print(tokenizer.evaluate(sentences))
+print(tokenizer.evaluate(sentence))
+#%%
+use_CSE = False
+# init the tokenizer like you would your LSTMTagger
+tokenizer: FlairTokenizer = FlairTokenizer(letter_to_ix, embedding_dim, hidden_dim, num_layers,
+                                           use_CSE,use_CRF=use_CRF)
+
+# FIXME: do a forward pass and compute the loss for two data points
+print(tokenizer.forward_loss([sentence, sentence_2]))
+print(tokenizer.forward_loss(sentence))   
+
+sentences = [sentence, sentence_2]
+print(tokenizer.forward_loss(sentences,foreval=True))
+print(tokenizer.forward_loss(sentence,foreval=True))
+print(tokenizer.evaluate(sentences))
+print(tokenizer.evaluate(sentence))

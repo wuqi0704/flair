@@ -198,12 +198,14 @@ class FlairTokenizer(flair.nn.Model):
             tag_seq_str += o 
         return tag_seq_str
 
-##############################################################################################################
     def prepare_cse(self, sentence, batch_size=1):
-        if batch_size == 1:
+        if (batch_size == 1) & (not isinstance(sentence,list)):
             embeds_f = self.lm_f.get_representation([sentence], '\n', '\n')[1:-1, :, :]
             embeds_b = self.lm_b.get_representation([sentence], '\n', '\n')[1:-1, :, :]
-        elif batch_size > 1:
+        elif (batch_size == 1) & (isinstance(sentence,list)):
+            embeds_f = self.lm_f.get_representation(sentence, '\n', '\n')[1:-1, :, :]
+            embeds_b = self.lm_b.get_representation(sentence, '\n', '\n')[1:-1, :, :]
+        else :
             embeds_f = self.lm_f.get_representation(list(sentence), '\n', '\n')[1:-1, :, :]
             embeds_b = self.lm_b.get_representation(list(sentence), '\n', '\n')[1:-1, :, :]
         return torch.cat((embeds_f, embeds_b), dim=2)
@@ -259,24 +261,25 @@ class FlairTokenizer(flair.nn.Model):
                 sent_string.append((sentence.string))
                 tags.append(sentence.get_labels('tokenization')[0]._value)
             batch_size=len(data_points)
+            if batch_size ==1:
+                sent_string = sent_string[0]
+                tags = tags[0]
         except: 
             sent_string = data_points.string
             tags = data_points.get_labels('tokenization')[0]._value
             batch_size = 1
-        
         targets = self.prepare_batch(tags, self.tag_to_ix).squeeze().to(device=device)
         if self.use_CSE == True:
             embeds = self.prepare_cse(sent_string, batch_size=batch_size).to(device)
         elif self.use_CSE == False:
             embeds = self.prepare_batch(sent_string, self.letter_to_ix)
             embeds = self.character_embeddings(embeds)
-
+            
         h0 = torch.zeros(self.num_layers * 2, embeds.shape[1], self.hidden_dim).to(device)
         c0 = torch.zeros(self.num_layers * 2, embeds.shape[1], self.hidden_dim).to(device)
         out, _ = self.lstm(embeds, (h0, c0))
         tag_space = self.hidden2tag(out.view(embeds.shape[0], embeds.shape[1], -1))
         tag_scores = F.log_softmax(tag_space, dim=2).squeeze()  # dim = (len(data_points),batch,len(tag))
-        
         if (batch_size == 1):
             packed_sent,packed_tags = sent_string,tags
         elif (batch_size > 1) : # if the input is more than one datapoint
@@ -311,7 +314,7 @@ class FlairTokenizer(flair.nn.Model):
         # TODO: what is currently your forward() goes here, followed by the loss computation
         # Since the DataPoint brings its own label, you can compute the loss here
     
-    
+
     @abstractmethod
     def evaluate(
             self,
@@ -330,12 +333,12 @@ class FlairTokenizer(flair.nn.Model):
         freshly recomputed, 'cpu' means all embeddings are stored on CPU, or 'gpu' means all embeddings are stored on GPU
         :return: Returns a Tuple consisting of a Result object and a loss float value
         """
-        if not isinstance(sentences, Dataset):
-            sentences = SentenceDataset(sentences)
-        try:
-            data_loader = DataLoader(sentences, batch_size=mini_batch_size, num_workers=num_workers)
-        except TypeError:
-            data_loader = [sentences]
+        from flair.data import LabeledString
+        if isinstance(sentences, LabeledString):
+            sentences = [sentences]
+        # if not isinstance(sentences, Dataset):
+        #     sentences = SentenceDataset(sentences)
+        data_loader = DataLoader(sentences, batch_size=mini_batch_size, num_workers=num_workers)
         eval_loss = 0
         with torch.no_grad():
             error_sentence = []; R_score, P_score, F1_score = [], [], []
@@ -346,7 +349,6 @@ class FlairTokenizer(flair.nn.Model):
                     tag_predict = self.forward(batch)
                 else:
                     loss,packed_sent,packed_tags,tag_predict = self.forward_loss(batch,foreval=True)
-                # print(sent_string,tags,tag_predict)
                 
                 reference = self.find_token((packed_sent, packed_tags))
                 candidate = self.find_token((packed_sent, tag_predict))
