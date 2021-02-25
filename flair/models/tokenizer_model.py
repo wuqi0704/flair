@@ -373,7 +373,7 @@ class FlairTokenizer(flair.nn.Model):
                     "\nResults:"
                     f"\n- F1-score : {np.mean(F1_score)}"
                     f"\n- Precision-score : {np.mean(P_score)}"
-                    f"\n- Recall-score : {np.mean(P_score)}"
+                    f"\n- Recall-score : {np.mean(R_score)}"
             )
 
             # line for log file

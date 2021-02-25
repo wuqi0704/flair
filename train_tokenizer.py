@@ -58,7 +58,7 @@ trainer: ModelTrainer = ModelTrainer(tokenizer, corpus)
 trainer.train(
     "resources/taggers/example-tokenizer",
     learning_rate=0.1,
-    mini_batch_size=32,
+    mini_batch_size=1,
     max_epochs=5,
 )
 

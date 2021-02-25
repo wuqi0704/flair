@@ -57,7 +57,7 @@ print(sentence.string)
 print(sentence.get_labels('tokenization'))
 
 
-#%%
+#%% use_CRF = True
 # from flair.models.tokenizer_model import *
 from flair.models.tokenizer_model import FlairTokenizer
 
@@ -66,7 +66,7 @@ embedding_dim = 4096
 hidden_dim = 256
 num_layers = 1
 use_CSE = True
-use_CRF = True
+use_CRF = False
 # init the tokenizer like you would your LSTMTagger
 tokenizer: FlairTokenizer = FlairTokenizer(letter_to_ix, embedding_dim, hidden_dim, num_layers,
                                            use_CSE,use_CRF=use_CRF)
@@ -75,13 +75,13 @@ tokenizer: FlairTokenizer = FlairTokenizer(letter_to_ix, embedding_dim, hidden_d
 print(tokenizer.forward_loss([sentence, sentence_2]))
 print(tokenizer.forward_loss(sentence))
 
-
+#%% use_CRF = False
 #%%
 sentences = [sentence, sentence_2]
 # tokenizer.forward_loss(sentences,foreval=True)
 # tokenizer.forward_loss(sentence,foreval=True)
 tokenizer.evaluate(sentences)
-tokenizer.evaluate(sentence) # FIXME: system stop running if I try tokenizer.evaluate([sentence])
+# tokenizer.evaluate(sentence) # FIXME: system stop running if I try tokenizer.evaluate([sentence])
 # TypeError: object of type 'LabeledString' has no len()
 
 
